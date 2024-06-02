@@ -17,6 +17,10 @@ import android.location.Location;
 import android.os.Bundle;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.View;
+import android.widget.ImageButton;
+import android.widget.RelativeLayout;
+import android.widget.TextView;
 import android.widget.Toast;
 import android.util.Log;
 import android.widget.Toolbar;
@@ -27,6 +31,9 @@ import com.android.volley.Response;
 import com.android.volley.VolleyError;
 import com.android.volley.toolbox.StringRequest;
 import com.android.volley.toolbox.Volley;
+import com.google.android.gms.location.FusedLocationProviderClient;
+import com.google.android.gms.location.LocationCallback;
+import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.maps.model.PolylineOptions;
 
 import com.google.android.gms.common.api.Status;
@@ -51,15 +58,21 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-public class MainActivity extends FragmentActivity implements OnMapReadyCallback, GoogleMap.OnMyLocationButtonClickListener, GoogleMap.OnMyLocationClickListener {
+public class MainActivity extends FragmentActivity implements OnMapReadyCallback,
+        GoogleMap.OnMyLocationButtonClickListener,
+        GoogleMap.OnMyLocationClickListener {
     private GoogleMap mMap = null;
     private PlacesClient placesClient = null;
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 1;
     private AutocompleteSupportFragment autocompleteFragment = null;
     private AutocompleteSupportFragment autocompleteFragmentEndPoint = null;
     private LatLng startLatLng, endLatLng;
+    private View mapView;
+    private boolean locationPermissionGranted = false;
     private final String apiKey = "AIzaSyDuPzcK7RYm5e0hAufDTsXpdPjubKe-7tI";
-    ArrayList markerPoints = new ArrayList();
+    // The entry point to the Fused Location Provider.
+    private FusedLocationProviderClient fusedLocationProviderClient;
+    private TextView distanceTextView;
 
     @SuppressLint("UseSupportActionBar")
     @Override
@@ -68,6 +81,7 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
         EdgeToEdge.enable(this);
         setContentView(R.layout.activity_main);
 
+        // setting up the filter map toolbar
         Toolbar toolbar = findViewById(R.id.my_toolbar);
         setActionBar(toolbar);
 
@@ -75,31 +89,12 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
         Places.initialize(getApplicationContext(), apiKey);
         placesClient = Places.createClient(this);
 
-        // initialize the autocomplete fragment and map fragment
-        autocompleteFragment = (AutocompleteSupportFragment) getSupportFragmentManager().findFragmentById(R.id.autocomplete_fragment);
-        autocompleteFragment.setPlaceFields(Arrays.asList(Place.Field.ID, Place.Field.NAME, Place.Field.LAT_LNG));
-        autocompleteFragment.setOnPlaceSelectedListener(new PlaceSelectionListener() {
-            @Override
-            public void onPlaceSelected(@NonNull Place place) {
-                LatLng latLng = place.getLatLng();
-                if (latLng == null) {
-                    System.out.println("No latlng found for place: " + place.getName());
-                    return;
-                }
-                mMap.clear();
-                mMap.addMarker(new MarkerOptions().position(latLng).title(place.getName()));
-                mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(latLng, 15.0f));
-            }
-
-            @Override
-            public void onError(@NonNull Status status) {
-                Log.i("MainActivity", "An error occurred: " + status);
-                Toast.makeText(MainActivity.this, "An error occurred: " + status, Toast.LENGTH_SHORT).show();
-            }
-        });
+        // Construct a FusedLocationProviderClient.
+        fusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(this);
 
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager().findFragmentById(R.id.map);
         if (mapFragment != null) {
+            mapView = mapFragment.getView();
             mapFragment.getMapAsync(this); // calls onMapReady
         }
         autocompleteFragment = (AutocompleteSupportFragment) getSupportFragmentManager().findFragmentById(R.id.autocomplete_fragment);
@@ -119,19 +114,19 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
     @Override
     public boolean onOptionsItemSelected(@NonNull MenuItem item) {
         int id = item.getItemId();
-        if(id == R.id.mapNone){
+        if (id == R.id.mapNone) {
             mMap.setMapType(GoogleMap.MAP_TYPE_NONE);
         }
-        if(id == R.id.mapNormal){
+        if (id == R.id.mapNormal) {
             mMap.setMapType(GoogleMap.MAP_TYPE_NORMAL);
         }
-        if(id == R.id.mapSattelite){
+        if (id == R.id.mapSattelite) {
             mMap.setMapType(GoogleMap.MAP_TYPE_SATELLITE);
         }
-        if(id == R.id.mapHybrid){
+        if (id == R.id.mapHybrid) {
             mMap.setMapType(GoogleMap.MAP_TYPE_HYBRID);
         }
-        if(id == R.id.mapTerrain){
+        if (id == R.id.mapTerrain) {
             mMap.setMapType(GoogleMap.MAP_TYPE_TERRAIN);
         }
         return super.onOptionsItemSelected(item);
@@ -177,7 +172,6 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
         LatLng defaultLocation = new LatLng(-34, 151);
         mMap.addMarker(new MarkerOptions().position(defaultLocation).title("Default Location"));
         mMap.moveCamera(CameraUpdateFactory.newLatLng(defaultLocation));
-        // set image more detail
         // Enable buildings
         mMap.setBuildingsEnabled(true);
 
@@ -192,6 +186,14 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
         // Enable indoor maps
         mMap.setIndoorEnabled(true);
 
+        // style location button
+        View locationButton = ((View) mapView.findViewById(Integer.parseInt("1")).getParent()).findViewById(Integer.parseInt("2"));
+        RelativeLayout.LayoutParams rlp = (RelativeLayout.LayoutParams) locationButton.getLayoutParams();
+        // position on right bottom
+        rlp.addRule(RelativeLayout.ALIGN_PARENT_TOP, 0);
+        rlp.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM, RelativeLayout.TRUE);
+        rlp.setMargins(0, 0, 100, 300);
+
         try {
             boolean success = googleMap.setMapStyle(MapStyleOptions.loadRawResourceStyle(this, R.raw.map_style));
 
@@ -201,8 +203,6 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
         } catch (Resources.NotFoundException e) {
             Log.e("MainActivity", "Can't find style. Error: ", e);
         }
-
-        // enable mylocation function
         enableMyLocation();
     }
 
@@ -218,6 +218,8 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
         // 1. Check if permissions are granted, if so, enable the my location layer
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED || ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             mMap.setMyLocationEnabled(true);
+            // configure the my location button to show the location of the user
+            mMap.getUiSettings().setMyLocationButtonEnabled(true);
             return;
         }
 
@@ -281,6 +283,14 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
                             .addAll(points)
                             .color(Color.BLUE)
                             .width(10);
+
+                    // Calculate and display distance
+                    float distance = calculateDistance(start, end);
+                    String distanceText = String.format("Distance: %.2f km", distance / 1000);
+                    distanceTextView = findViewById(R.id.distances);
+                    distanceTextView.setText(distanceText);
+                    Toast.makeText(MainActivity.this, distanceText, Toast.LENGTH_LONG).show();
+
                     mMap.addPolyline(polylineOptions);
                 } catch (JSONException e) {
                     e.printStackTrace();
@@ -295,6 +305,21 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
         requestQueue.add(stringRequest);
     }
 
+
+    // calculate distance between two points
+    private float calculateDistance(LatLng start, LatLng end) {
+        Location startLocation = new Location("startLocation");
+        startLocation.setLatitude(start.latitude);
+        startLocation.setLongitude(start.longitude);
+
+        Location endLocation = new Location("endLocation");
+        endLocation.setLatitude(end.latitude);
+        endLocation.setLongitude(end.longitude);
+
+        return startLocation.distanceTo(endLocation);
+    }
+
+    // decode the polyline
     private List<LatLng> decodePoly(String encoded) {
         List<LatLng> poly = new ArrayList<>();
         int index = 0, len = encoded.length();
@@ -326,6 +351,5 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
 
         return poly;
     }
-
 
 }
