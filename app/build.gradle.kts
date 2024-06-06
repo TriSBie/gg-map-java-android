@@ -7,6 +7,20 @@ buildscript {
         classpath("com.google.android.libraries.mapsplatform.secrets-gradle-plugin:secrets-gradle-plugin:2.0.1")
     }
 }
+secrets {
+    // Change the properties file from the default "local.properties" in your root project
+    // to another properties file in your root project.
+    propertiesFileName="D:\\Semester8\\prm\\MapDemo\\app\\src\\androidTest\\assets\\secrets.properties";
+
+    // A properties file containing default secret values. This file can be checked in version
+    // control.
+    defaultPropertiesFileName = "D:\\Semester8\\prm\\MapDemo\\app\\src\\androidTest\\assets\\local.defaults.properties";
+
+    // Configure which keys should be ignored by the plugin by providing regular expressions.
+    // "sdk.dir" is ignored by default.
+    ignoreList.add("keyToIgnore") // Ignore the key "keyToIgnore"
+    ignoreList.add("sdk.*")       // Ignore all keys matching the regexp "sdk.*"
+}
 
 android {
     namespace = "com.example.mapdemo"

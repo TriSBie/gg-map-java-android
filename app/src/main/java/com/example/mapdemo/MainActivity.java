@@ -5,19 +5,22 @@ import android.content.pm.PackageManager;
 
 import androidx.activity.EdgeToEdge;
 import androidx.annotation.NonNull;
-import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 import androidx.fragment.app.FragmentActivity;
 
 import android.Manifest;
 import android.content.res.Resources;
 import android.graphics.Color;
+import android.location.Geocoder;
 import android.location.Location;
 
+import android.location.LocationListener;
+import android.location.LocationManager;
 import android.os.Bundle;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.widget.Button;
 import android.widget.ImageButton;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
@@ -32,8 +35,9 @@ import com.android.volley.VolleyError;
 import com.android.volley.toolbox.StringRequest;
 import com.android.volley.toolbox.Volley;
 import com.google.android.gms.location.FusedLocationProviderClient;
-import com.google.android.gms.location.LocationCallback;
-import com.google.android.gms.location.LocationServices;
+
+import com.google.android.gms.maps.model.BitmapDescriptorFactory;
+import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.PolylineOptions;
 
 import com.google.android.gms.common.api.Status;
@@ -59,17 +63,21 @@ import java.util.Arrays;
 import java.util.List;
 
 public class MainActivity extends FragmentActivity implements OnMapReadyCallback,
+        LocationListener,
         GoogleMap.OnMyLocationButtonClickListener,
         GoogleMap.OnMyLocationClickListener {
     private GoogleMap mMap = null;
     private PlacesClient placesClient = null;
+    private LocationManager locationManager = null;
+    private Button customLocation = null;
+    Location mLastLocation;
+    Marker mCurrLocationMarker;
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 1;
     private AutocompleteSupportFragment autocompleteFragment = null;
     private AutocompleteSupportFragment autocompleteFragmentEndPoint = null;
     private LatLng startLatLng, endLatLng;
     private View mapView;
-    private boolean locationPermissionGranted = false;
-    private final String apiKey = "AIzaSyDuPzcK7RYm5e0hAufDTsXpdPjubKe-7tI";
+    private final String apiKey = "AIzaSyAeb8O4VJq8ea3gw8VAEb3TcgCQTQ6esT0";
     // The entry point to the Fused Location Provider.
     private FusedLocationProviderClient fusedLocationProviderClient;
     private TextView distanceTextView;
@@ -80,6 +88,7 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
         super.onCreate(savedInstanceState);
         EdgeToEdge.enable(this);
         setContentView(R.layout.activity_main);
+        customLocation = findViewById(R.id.customLocation);
 
         // setting up the filter map toolbar
         Toolbar toolbar = findViewById(R.id.my_toolbar);
@@ -88,9 +97,6 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
         // get the API key from the AndroidManifest.xml file
         Places.initialize(getApplicationContext(), apiKey);
         placesClient = Places.createClient(this);
-
-        // Construct a FusedLocationProviderClient.
-        fusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(this);
 
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager().findFragmentById(R.id.map);
         if (mapFragment != null) {
@@ -103,7 +109,26 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
         ;
         setupAutocompleteFragment(R.id.autocomplete_fragment, true);
         setupAutocompleteFragment(R.id.autocomplete_fragment_v1, false);
+
+        // set action on custom location button
+        customLocation.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                getLocation();
+            }
+        });
     }
+
+    @SuppressLint("MissingPermission")
+    private void getLocation() {
+        try {
+            locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
+            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 5000, 5, MainActivity.this);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
@@ -169,9 +194,10 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
     public void onMapReady(@NonNull GoogleMap googleMap) {
         mMap = googleMap;
         // Optional: Add a marker in a default location and move the camera
-        LatLng defaultLocation = new LatLng(-34, 151);
+        LatLng defaultLocation = new LatLng(10.8751238, 106.8007234);
         mMap.addMarker(new MarkerOptions().position(defaultLocation).title("Default Location"));
-        mMap.moveCamera(CameraUpdateFactory.newLatLng(defaultLocation));
+
+        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(defaultLocation, 15));
         // Enable buildings
         mMap.setBuildingsEnabled(true);
 
@@ -203,11 +229,29 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
         } catch (Resources.NotFoundException e) {
             Log.e("MainActivity", "Can't find style. Error: ", e);
         }
+        mMap.setOnMapClickListener(new GoogleMap.OnMapClickListener() {
+            @Override
+            public void onMapClick(@NonNull LatLng latLng) {
+                mMap.clear();
+                Location location = new Location("Location");
+                location.setLatitude(latLng.latitude);
+                location.setLongitude(latLng.longitude);
+                Geocoder geocoder = new Geocoder(MainActivity.this);
+                try {
+                    List<android.location.Address> addresses = geocoder.getFromLocation(location.getLatitude(), location.getLongitude(), 1);
+                    String address = addresses.get(0).getAddressLine(0);
+                    mMap.addMarker(new MarkerOptions().position(latLng).title(address));
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        });
         enableMyLocation();
     }
 
 
     @Override
+    // [START maps_on_resume]
     public void onPointerCaptureChanged(boolean hasCapture) {
         super.onPointerCaptureChanged(hasCapture);
     }
@@ -229,6 +273,7 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
 
 
     @Override
+    // [START maps_check_location_permission_result]
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         if (requestCode != LOCATION_PERMISSION_REQUEST_CODE) {
             super.onRequestPermissionsResult(requestCode, permissions, grantResults);
@@ -267,7 +312,9 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
         String url = "https://maps.googleapis.com/maps/api/directions/json?origin=" + start.latitude + "," + start.longitude +
                 "&destination=" + end.latitude + "," + end.longitude + "&key=" + apiKey;
 
-        RequestQueue requestQueue = Volley.newRequestQueue(this);
+        // clear the old polyline
+        mMap.clear();
+        RequestQueue requestQueue = Volley.newRequestQueue(this); // Instantiate the RequestQueue.
         StringRequest stringRequest = new StringRequest(Request.Method.GET, url, new Response.Listener<String>() {
             @Override
             public void onResponse(String response) {
@@ -277,7 +324,7 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
                     JSONObject route = routes.getJSONObject(0);
                     JSONObject overviewPolyline = route.getJSONObject("overview_polyline");
                     String encodedString = overviewPolyline.getString("points");
-                    List<LatLng> points = decodePoly(encodedString);
+                    List<LatLng> points = decodePoly(encodedString); // decode the polyline
 
                     PolylineOptions polylineOptions = new PolylineOptions()
                             .addAll(points)
@@ -302,7 +349,9 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
                 Toast.makeText(MainActivity.this, "Error fetching route", Toast.LENGTH_SHORT).show();
             }
         });
+        // Add the request to the RequestQueue. To execute the request
         requestQueue.add(stringRequest);
+
     }
 
 
@@ -352,4 +401,34 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
         return poly;
     }
 
+
+    @Override
+    public void onLocationChanged(@NonNull Location location) {
+        try {
+            mMap.clear();
+            Geocoder geocoder = new Geocoder(this);
+            List<android.location.Address> addresses = geocoder.getFromLocation(location.getLatitude(), location.getLongitude(), 1);
+            String address = addresses.get(0).getAddressLine(0);
+            // add to current marker with title
+            mMap.addMarker(new MarkerOptions().position(new LatLng(location.getLatitude(), location.getLongitude())).title(address));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+//        mLastLocation = location;
+//        if (mCurrLocationMarker != null) {
+//            mCurrLocationMarker.remove();
+//        }
+//        //Place current location marker
+//        LatLng latLng = new LatLng(location.getLatitude(), location.getLongitude());
+//
+//        MarkerOptions markerOptions = new MarkerOptions();
+//        markerOptions.position(latLng);
+//        markerOptions.title("Current Position");
+//        markerOptions.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN));
+//        mCurrLocationMarker = mMap.addMarker(markerOptions);
+//
+//        //move map camera
+//        mMap.moveCamera(CameraUpdateFactory.newLatLng(latLng));
+//        mMap.animateCamera(CameraUpdateFactory.zoomTo(11));
+    }
 }
